@@ -1,0 +1,29 @@
+{
+  "name": "cryptlock",
+  "version": "1.0.0",
+  "description": "A college semester project that allows authenticated users to store, list, download, decrypt, and delete files through a web interface.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0x64697679616d/CryptLock.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/0x64697679616d/CryptLock/issues"
+  },
+  "homepage": "https://github.com/0x64697679616d/CryptLock#readme",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "dotenv": "^18.0.8",
+    "express": "^5.3.0",
+    "express-session": "^1.19.0",
+    "mongodb": "^7.7.0",
+    "multer": "^2.4.0"
+  }
+}
