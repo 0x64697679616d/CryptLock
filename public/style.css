@@ -1,0 +1,136 @@
+:root {
+    font-family: Arial, sans-serif;
+    color: #f4f6ff;
+    background: #0b1020;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+}
+
+.page {
+    display: grid;
+    min-height: 100vh;
+    place-items: center;
+    padding: 24px 16px;
+}
+
+.login-card {
+    width: min(100%, 420px);
+    padding: 32px;
+    border: 1px solid #303950;
+    border-radius: 18px;
+    background: #12192d;
+}
+
+.brand-mark {
+    margin-bottom: 20px;
+    font-size: 28px;
+}
+
+.eyebrow {
+    color: #a4afff;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 0.12em;
+}
+
+.intro {
+    margin-bottom: 28px;
+    color: #a4acc1;
+    line-height: 1.5;
+}
+
+.auth-form {
+    display: grid;
+    gap: 12px;
+}
+
+.auth-form label {
+    font-size: 14px;
+}
+
+.auth-form input,
+.auth-form button {
+    min-height: 46px;
+    padding: 0 12px;
+    border: 1px solid #39435e;
+    border-radius: 9px;
+    font: inherit;
+}
+
+.auth-form input {
+    background: #0e1425;
+    color: #f4f6ff;
+}
+
+.auth-form button {
+    margin-top: 4px;
+    border: 0;
+    background: #6577f5;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.register-panel summary {
+    display: flex;
+    min-height: 46px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 12px;
+    border: 1px solid #39435e;
+    border-radius: 9px;
+    color: #e4e8f7;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    list-style: none;
+}
+
+.register-panel summary::-webkit-details-marker {
+    display: none;
+}
+
+.register-panel summary::after {
+    color: #a4afff;
+    content: "+";
+    font-size: 20px;
+}
+
+.register-panel[open] summary::after {
+    content: "−";
+}
+
+.register-panel summary:focus-visible {
+    outline: 2px solid #a4afff;
+    outline-offset: 3px;
+}
+
+.register-panel[open] summary {
+    margin-bottom: 12px;
+}
+
+.register-form {
+    padding-top: 4px;
+}
+
+.privacy-note {
+    margin: 24px 0 0;
+    color: #858fa8;
+    font-size: 12px;
+    text-align: center;
+}
+
+@media (max-width: 480px) {
+    .login-card {
+        padding: 26px 22px;
+    }
+}
