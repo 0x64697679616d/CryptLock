@@ -1,38 +1,14 @@
+#include <stdio.h>
 
-# Compiled C programs
-*.exe
-*.o
-*.obj
+int retrieveFile(
+    const char *fileid,
+    const char *username,
+    const char *destinationPath
+) {
+    
+    if(fileid == NULL || fileid[0] == '\0' || username == NULL || username[0] == '\0' || destinationPath == NULL || destinationPath[0] == '\0'){
+        return 1;
+    }
 
-# Node.js dependencies
-node_modules/
-
-# Environment variables and secrets
-.env
-.env.*
-!.env.example
-
-# Private uploaded and encrypted files
-data/files/*
-!data/files/.gitkeep
-
-# Downloaded files and temporary outputs
-uploads/
-temp/
-*.tmp
-
-# HTTPS certificates and private keys
-*.key
-*.pem
-*.crt
-certs/
-
-# Logs
-*.log
-npm-debug.log*
-
-# Editor and operating system files
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+    return 0;
+}
