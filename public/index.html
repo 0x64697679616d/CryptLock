@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#07091f">
+  <title>Digital Locker — Your Private File Vault</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="cyber-background" aria-hidden="true">
+    <div class="light-orb light-orb-blue" data-parallax="light" data-parallax-speed="0.04"></div>
+    <div class="light-orb light-orb-purple" data-parallax="light" data-parallax-speed="0.06"></div>
+    <div class="binary-rain">
+      <span>01010101<br>10101010<br>11001010<br>01010110<br>10110101<br>01101001<br>11010010<br>01011010<br>10100101<br>01110100<br>11001010<br>10100101</span>
+      <span>10101010<br>01010101<br>10110010<br>01101010<br>11010100<br>01011011<br>10100101<br>01110010<br>11001010<br>00110101<br>01010110<br>10100101</span>
+      <span>11001010<br>01010110<br>10101001<br>01110100<br>11010010<br>00101101<br>10110101<br>01011010<br>11001001<br>01101010<br>01011011<br>10101010</span>
+      <span>01011010<br>10100101<br>01101010<br>11010010<br>00110101<br>10101010<br>01010101<br>11001010<br>01110100<br>10110101<br>11001001<br>01101100</span>
+      <span>10110101<br>01101001<br>11001010<br>01010110<br>10101001<br>00110101<br>11010010<br>01011010<br>01110100<br>10101010<br>01011010<br>11001001</span>
+    </div>
+    <div class="particle particle-one"></div>
+    <div class="particle particle-two"></div>
+    <div class="particle particle-three"></div>
+    <div class="particle particle-four"></div>
+  </div>
+
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="Digital Locker home">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" focusable="false">
+          <path d="M10 14V10a6 6 0 0 1 12 0v4M8 14h16v14H8z" />
+          <circle cx="16" cy="20" r="2" />
+          <path d="M16 22v3" />
+        </svg>
+      </span>
+      <span class="brand-copy">
+        <strong>Digital <span>Locker</span></strong>
+        <small>Your files. Your control.</small>
+      </span>
+    </a>
+
+    <nav class="top-navigation" aria-label="Main navigation">
+      <a href="landing.html">Home</a>
+      <a href="#features">Features</a>
+      <a href="#security">How it works</a>
+      <a class="nav-cta" href="#login-card">Get started <span aria-hidden="true">→</span></a>
+    </nav>
+  </header>
+
+  <main class="hero-layout" id="top">
+    <section class="hero-copy" aria-labelledby="hero-title">
+      <p class="eyebrow">Your personal digital vault</p>
+      <h1 id="hero-title">Secure store<br><span>access anytime</span></h1>
+      <p class="hero-description">
+        A private space for your important files. Keep your digital world protected.
+      </p>
+
+      <div class="vault-stage" aria-hidden="true" data-scroll-reveal="scale">
+        <div class="vault-platform"></div>
+        <div class="vault-art" id="digital-vault" data-parallax="vault" data-parallax-speed="0.14">
+          <div class="vault-frame">
+            <div class="vault-door">
+              <span class="vault-hinge hinge-top"></span>
+              <span class="vault-hinge hinge-bottom"></span>
+              <span class="vault-wheel-ring">
+                <span class="vault-wheel">
+                  <span class="vault-keyhole"></span>
+                </span>
+              </span>
+              <span class="vault-bolt bolt-one"></span>
+              <span class="vault-bolt bolt-two"></span>
+              <span class="vault-bolt bolt-three"></span>
+              <span class="vault-bolt bolt-four"></span>
+            </div>
+            <div class="vault-side">
+              <span class="side-panel panel-file" aria-hidden="true">▤</span>
+              <span class="side-panel panel-image" aria-hidden="true">▧</span>
+              <span class="side-panel panel-media" aria-hidden="true">▷</span>
+            </div>
+          </div>
+          <div class="vault-glow"></div>
+        </div>
+      </div>
+
+      <div class="feature-list" id="features">
+        <article class="feature" data-scroll-reveal="left">
+          <span class="feature-icon feature-lock" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <rect x="5" y="10" width="14" height="11" rx="2" />
+              <path d="M8 10V7a4 4 0 1 1 8 0v3M12 14v3" />
+            </svg>
+          </span>
+          <span><strong>Encrypted storage</strong><small>Your files are protected</small></span>
+        </article>
+        <article class="feature" data-scroll-reveal="right">
+          <span class="feature-icon feature-cloud" aria-hidden="true">☁</span>
+          <span><strong>Private file access</strong><small>Your files, organized in one place</small></span>
+        </article>
+        <article class="feature" id="security" data-scroll-reveal="left">
+          <span class="feature-icon feature-shield" aria-hidden="true">✓</span>
+          <span><strong>Secure by design</strong><small>Private access to your locker</small></span>
+        </article>
+      </div>
+    </section>
+
+    <section class="login-card" id="login-card" aria-labelledby="login-title" data-scroll-reveal="right">
+      <div class="auth-panel-glow" aria-hidden="true"></div>
+
+      <div class="auth-view" id="login-view">
+        <p class="card-eyebrow">Welcome to your private space</p>
+        <h2 id="login-title" tabindex="-1">Welcome <span>back</span></h2>
+        <p class="card-description">Unlock your secure world of files.</p>
+
+        <div class="auth-tabs" role="tablist" aria-label="Account access">
+          <button class="tab is-active" id="login-tab" type="button" role="tab"
+            data-view="login" aria-selected="true" aria-controls="login-form">Login</button>
+          <button class="tab" id="register-tab" type="button" role="tab"
+            data-view="register" aria-selected="false" aria-controls="register-form">Register</button>
+        </div>
+
+        <form id="login-form" class="auth-form" novalidate>
+          <label for="login-password">Master password</label>
+          <div class="input-wrap">
+            <svg class="input-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="5" y="10" width="14" height="11" rx="2" />
+              <path d="M8 10V7a4 4 0 1 1 8 0v3M12 14v3" />
+            </svg>
+            <input id="login-password" name="password" type="password"
+              autocomplete="current-password" placeholder="Enter your password" required>
+            <button class="show-password" type="button" data-password-toggle="login-password"
+              aria-label="Show password" aria-pressed="false">◉</button>
+          </div>
+
+          <p class="message" id="login-message" role="status" aria-live="polite"></p>
+          <button class="unlock-button" id="login-button" type="submit">
+            <span class="button-text">Unlock my locker</span>
+            <span class="button-arrow" aria-hidden="true">→</span>
+            <span class="spinner" aria-hidden="true"></span>
+          </button>
+        </form>
+
+        <div class="or-divider"><span>Your files. Your control.</span></div>
+        <p class="register-prompt">New here? <button class="text-button" type="button" data-switch-view="register">Create an account</button></p>
+        <p class="privacy-note"><span aria-hidden="true">▣</span> Your privacy matters.</p>
+      </div>
+
+      <div class="auth-view" id="register-view" hidden>
+        <p class="card-eyebrow">Start your private space</p>
+        <h2 id="register-title" tabindex="-1">Create <span>your locker</span></h2>
+        <p class="card-description">Choose a master password to protect your files.</p>
+
+        <div class="auth-tabs" role="tablist" aria-label="Account access">
+          <button class="tab" type="button" role="tab" data-view="login"
+            aria-selected="false" aria-controls="login-form">Login</button>
+          <button class="tab is-active" type="button" role="tab" data-view="register"
+            aria-selected="true" aria-controls="register-form">Register</button>
+        </div>
+
+        <form id="register-form" class="auth-form" novalidate>
+          <label for="register-password">Master password</label>
+          <div class="input-wrap">
+            <svg class="input-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="5" y="10" width="14" height="11" rx="2" />
+              <path d="M8 10V7a4 4 0 1 1 8 0v3M12 14v3" />
+            </svg>
+            <input id="register-password" name="password" type="password"
+              autocomplete="new-password" placeholder="Create a master password" required>
+            <button class="show-password" type="button" data-password-toggle="register-password"
+              aria-label="Show password" aria-pressed="false">◉</button>
+          </div>
+
+          <label for="confirm-password">Confirm password</label>
+          <div class="input-wrap">
+            <svg class="input-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="5" y="10" width="14" height="11" rx="2" />
+              <path d="M8 10V7a4 4 0 1 1 8 0v3M12 14v3" />
+            </svg>
+            <input id="confirm-password" name="confirm-password" type="password"
+              autocomplete="new-password" placeholder="Enter your password again" required>
+            <button class="show-password" type="button" data-password-toggle="confirm-password"
+              aria-label="Show password" aria-pressed="false">◉</button>
+          </div>
+
+          <p class="message" id="register-message" role="status" aria-live="polite"></p>
+          <button class="unlock-button" id="register-button" type="submit">
+            <span class="button-text">Create my locker</span>
+            <span class="button-arrow" aria-hidden="true">→</span>
+            <span class="spinner" aria-hidden="true"></span>
+          </button>
+        </form>
+
+        <p class="register-prompt">Already have a locker? <button class="text-button" type="button" data-switch-view="login">Back to login</button></p>
+        <p class="privacy-note"><span aria-hidden="true">▣</span> Your password is the key to your private files.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="page-footer">Digital Locker <span aria-hidden="true">•</span> Private file storage</footer>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Create Account | Digital Locker</title>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <main class="auth-layout single-card">
+
+    <section class="auth-card register-card">
+
+      <div class="lock-icon">🛡️</div>
+
+      <p class="eyebrow">START SECURE</p>
+
+      <h1>Create Your Locker</h1>
+
+      <p class="subtitle">
+        Create your private space for secure files.
+      </p>
+
+      <form id="register-form">
+
+        <label for="new-password">Master Password</label>
+
+        <input
+          type="password"
+          id="new-password"
+          placeholder="Create a strong password"
+          autocomplete="new-password"
+          required
+        >
+
+        <label for="confirm-password">Confirm Password</label>
+
+        <input
+          type="password"
+          id="confirm-password"
+          placeholder="Enter your password again"
+          autocomplete="new-password"
+          required
+        >
+
+        <button
+          type="button"
+          id="toggle-password"
+          class="text-button"
+        >
+          Show passwords
+
+        </button>
+
+        <button
+          type="submit"
+          class="primary-button"
+          id="register-button"
+        >
+        
+          <span class="button-text">Create My Locker →</span>
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+
+        <p id="register-message" class="message" role="status"></p>
+
+      </form>
+
+      <p class="switch-text">
+        Already have an account?
+        <a href="index.html">Sign in</a>
+      </p>
+
+      <p class="security-note">
+        🔒 Your private space for secure files.
+      </p>
+
+    </section>
+
+  </main>
+
+</body>
+</html>

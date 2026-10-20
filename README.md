@@ -25,7 +25,7 @@ Browser (HTML, CSS, JavaScript) → Node.js / Express → C command-line program
 ## Team Responsibilities
 
 - Divyam: `backend/main.c`, `backend/auth.c`, `backend/crypto.c`, `backend/locker.c`, and `server/server.js`
-- Friend A: `public/`
+-Bablu: `public/`
 - Friend B: `backend/locker.h` and `backend/catalog.c`
 
 ## Development Status
