@@ -2,6 +2,21 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct {
+    char id[37];
+    char owner[50];
+    char name[50];
+    char lockedName[50];
+    long size;
+    char date[20];
+} Entry;
+
+int getEntryById(const char *id, const char *owner, Entry *e);
+
+int getEntry(int index, Entry *e);
+
+static int isValidStoredName(const char *name);
+
 int retrieveFile(
     const char *fileid,
     const char *username,
@@ -10,6 +25,70 @@ int retrieveFile(
     if (fileid == NULL || fileid[0] == '\0' ||
         username == NULL || username[0] == '\0' ||
         destinationPath == NULL || destinationPath[0] == '\0') {
+        return 1;
+    }
+
+    Entry entry;
+
+    if (!getEntryById(fileid, username, &entry)) {
+        return 1;
+    }
+
+    if (!isValidStoredName(entry.lockedName)) {
+        return 1;
+    }
+
+    char storedPath[512];
+
+    int length = snprintf(
+        storedPath,
+        sizeof(storedPath),
+        "data/files/%s",
+        entry.lockedName
+    );
+
+    if (length < 0 || (size_t)length >= sizeof(storedPath)) {
+        return 1;
+    }
+
+    FILE *source = fopen(storedPath, "rb");
+
+    if (source == NULL) {
+        return 1;
+    }
+
+    /* Do not overwrite an existing destination file. */
+    FILE *destination = fopen(destinationPath, "wbx");
+
+    if (destination == NULL) {
+        fclose(source);
+        return 1;
+    }
+
+    int ch;
+    int failed = 0;
+
+    while ((ch = fgetc(source)) != EOF) {
+        if (fputc(ch, destination) == EOF) {
+            failed = 1;
+            break;
+        }
+    }
+
+    if (ferror(source)) {
+        failed = 1;
+    }
+
+    if (fclose(source) != 0) {
+        failed = 1;
+    }
+
+    if (fclose(destination) != 0) {
+        failed = 1;
+    }
+
+    if (failed) {
+        remove(destinationPath);
         return 1;
     }
 
