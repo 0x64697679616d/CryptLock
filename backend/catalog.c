@@ -4,6 +4,8 @@
 #include <string.h>
 
 typedef struct {
+    char id[37];
+    char owner[50];
     char name[50];
     char lockedName[50];
     long size;
@@ -12,20 +14,29 @@ typedef struct {
 
 
 int appendEntry(const Entry *e) {
+    if (e == NULL) {
+        return 0;
+    }
+
     FILE *fp = fopen("catalog.txt", "a");
 
     if (fp == NULL) {
         return 0;
     }
 
-    fprintf(fp, "%s|%s|%ld|%s\n",
-            e->name,
-            e->lockedName,
-            e->size,
-            e->date);
+    int result = fprintf(fp, "%s|%s|%s|%s|%ld|%s\n",
+                         e->id,
+                         e->owner,
+                         e->name,
+                         e->lockedName,
+                         e->size,
+                         e->date);
 
-    fclose(fp);
-    return 1;
+    if (fclose(fp) != 0) {
+        return 0;
+    }
+
+    return result >= 0;
 }
 
 int countEntries(void) {
@@ -63,17 +74,63 @@ int getEntry(int index, Entry *e) {
 
     while (fgets(line, sizeof(line), fp) != NULL) {
         if (current == index) {
-            int fields = sscanf(line, "%49[^|]|%49[^|]|%ld|%19[^\n]",
-                                e->name,
-                                e->lockedName,
-                                &e->size,
-                                e->date);
+            int fields = sscanf(
+                line,
+                "%36[^|]|%49[^|]|%49[^|]|%49[^|]|%ld|%19[^\n]",
+                e->id,
+                e->owner,
+                e->name,
+                e->lockedName,
+                &e->size,
+                e->date
+            );
 
             fclose(fp);
-            return fields == 4;
+            return fields == 6;
         }
 
         current++;
+    }
+
+    fclose(fp);
+    return 0;
+}
+
+int getEntryById(const char *id, const char *owner, Entry *e) {
+    if (id == NULL || id[0] == '\0' ||
+        owner == NULL || owner[0] == '\0' ||
+        e == NULL) {
+        return 0;
+    }
+
+    FILE *fp = fopen("catalog.txt", "r");
+
+    if (fp == NULL) {
+        return 0;
+    }
+
+    char line[256];
+    Entry current;
+
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        int fields = sscanf(
+            line,
+            "%36[^|]|%49[^|]|%49[^|]|%49[^|]|%ld|%19[^\n]",
+            current.id,
+            current.owner,
+            current.name,
+            current.lockedName,
+            &current.size,
+            current.date
+        );
+
+        if (fields == 6 &&
+            strcmp(current.id, id) == 0 &&
+            strcmp(current.owner, owner) == 0) {
+            *e = current;
+            fclose(fp);
+            return 1;
+        }
     }
 
     fclose(fp);
@@ -96,8 +153,18 @@ int listFiles(void) {
     printf("\n--- Digital Locker Files ---\n");
 
     while (fgets(line, sizeof(line), fp) != NULL) {
-        if (sscanf(line, "%49[^|]|%49[^|]|%ld|%19[^\n]",
-                   e.name, e.lockedName, &e.size, e.date) == 4) {
+        int fields = sscanf(
+            line,
+            "%36[^|]|%49[^|]|%49[^|]|%49[^|]|%ld|%19[^\n]",
+            e.id,
+            e.owner,
+            e.name,
+            e.lockedName,
+            &e.size,
+            e.date
+        );
+
+        if (fields == 6) {
             printf("%d. %s | %ld bytes | %s\n",
                    index, e.name, e.size, e.date);
             index++;
