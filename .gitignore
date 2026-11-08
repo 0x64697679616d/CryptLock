@@ -38,3 +38,17 @@ npm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# CryptLock build outputs
+/backend/locker
+/backend/crypto_test
+/backend/test_retrieve
+/backend/test_*.bin
+
+# Keep secrets private
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
