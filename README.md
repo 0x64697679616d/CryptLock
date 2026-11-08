@@ -1,37 +1,61 @@
-# CryptLock: Digital Locker
+﻿# CryptLock
 
-A college semester project that allows authenticated users to store, list, download, decrypt, and delete files through a web interface.
+CryptLock is a college semester project providing a web-based digital locker for encrypted file storage and management.
 
-## Architecture
-
-Browser (HTML, CSS, JavaScript) → Node.js / Express → C command-line program → MongoDB and local file storage.
+## Features
+- Master-password registration and login
+- Password hashing with bcrypt
+- AES-256-GCM encryption and authenticated decryption
+- File upload, listing, preview and download
+- Folder organization, rename and move
+- Trash, restore and permanent deletion
+- 50 MB maximum upload size
 
 ## Technology Stack
+- Frontend: HTML, CSS, JavaScript
+- Server: Node.js and Express
+- Encryption: C, OpenSSL, AES-256-GCM
+- Password hashing: bcrypt
+- Key derivation: scrypt
+- Database: MongoDB
 
-- **Frontend:** HTML, CSS, JavaScript
-- **Web server:** Node.js, Express
-- **Backend logic:** C
-- **Database:** MongoDB
-- **Encryption:** XOR for initial development, followed by AES-256
-- **Version control:** Git and GitHub
+## Architecture
+Browser -> Express API -> C encryption program -> encrypted local file storage
 
-## Project Structure
+MongoDB stores account information and file metadata. Encrypted file contents are stored locally in data/files/.
 
-- `backend/`: C implementation
-- `server/`: Express API server
-- `public/`: Web interface
-- `data/files/`: Local storage for encrypted files
+## Requirements
+- Node.js and npm
+- MongoDB
+- Ubuntu or WSL Ubuntu
+- GCC and OpenSSL development libraries
 
-## Team Responsibilities
+## Setup
+1. Clone the repository.
+2. Run npm ci.
+3. Create server/.env using server/.env.example.
+4. Configure MONGODB_URI, MONGODB_DATABASE and SESSION_SECRET.
+5. Build the C program using npm run build:locker from WSL Ubuntu.
+6. Start the server using npm start.
+7. Open http://localhost:3000.
 
-- Divyam: `backend/main.c`, `backend/auth.c`, `backend/crypto.c`, `backend/locker.c`, and `server/server.js`
--Bablu: `public/`
-- Friend B: `backend/locker.h` and `backend/catalog.c`
+## Testing
+Run npm test from WSL Ubuntu to execute the AES-256-GCM test suite.
 
-## Development Status
+The tests cover normal encryption/decryption, empty files, binary files, large files, wrong-key rejection and ciphertext tampering.
 
-Initial repository setup. Features will be implemented incrementally.
+## Account Model
+The current application supports one master locker per MongoDB database. It does not currently provide separate user accounts.
 
-## Security Notice
+## Security Limitations
+- Express uses its default in-memory session store.
+- Active encryption keys are held in server process memory.
+- Restarting the server invalidates active sessions.
+- Encrypted files are stored on the server's local filesystem.
+- Decrypted previews and downloads use temporary server-side files.
+- File deletion does not guarantee forensic erasure.
 
-This project is for educational development. Do not store real sensitive documents or passwords until the authentication, encryption, key management, and file-handling security have been reviewed.
+This is an educational project, not a production-ready storage service. Do not store highly sensitive or irreplaceable documents without an independent security review.
+
+## License
+ISC

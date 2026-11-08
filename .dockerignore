@@ -1,0 +1,14 @@
+node_modules
+.git
+.env
+.env.*
+**/.env
+**/.env.*
+backup-before-*
+data/files/*
+!data/files/.gitkeep
+uploads/*
+temp/*
+*.exe
+backend/locker
+backend/crypto_test
