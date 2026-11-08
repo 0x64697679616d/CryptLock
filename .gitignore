@@ -1,9 +1,4 @@
-# Compiled C programs
-*.exe
-*.o
-*.obj
-
-# Node.js dependencies
+﻿# Dependencies
 node_modules/
 
 # Environment variables and secrets
@@ -14,41 +9,39 @@ node_modules/
 **/.env.*
 !**/.env.example
 
-# Private uploaded and encrypted files
+# User data and encrypted files
 data/files/*
 !data/files/.gitkeep
-
-# Downloaded files and temporary outputs
 uploads/
 temp/
-*.tmp
 
-# HTTPS certificates and private keys
-*.key
-*.pem
-*.crt
-certs/
+# Backups
+backup-before-*/
 
-# Logs
-*.log
-npm-debug.log*
-
-# Editor and operating system files
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-
-# CryptLock build outputs
+# Compiled binaries and build outputs
+*.exe
+*.o
+*.obj
 /backend/locker
 /backend/crypto_test
 /backend/test_retrieve
 /backend/test_*.bin
 
-# Keep secrets private
-.env
-.env.*
-!.env.example
-**/.env
-**/.env.*
-!**/.env.example
+# Certificates and private keys
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+certs/
+
+# Logs and temporary files
+*.log
+*.tmp
+npm-debug.log*
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -48,6 +48,8 @@
             <p class="eyebrow">WELCOME BACK</p><h2>Good to have<br><span>you back.</span></h2>
             <p class="auth-description">Your private space is one password away.</p>
             <form id="login-form" novalidate>
+              <label for="login-username">Username <span>YOUR ACCOUNT ID</span></label>
+              <div class="input-shell"><span class="input-icon">＠</span><input id="login-username" type="text" minlength="3" maxlength="24" autocomplete="username" placeholder="Enter your username" required></div>
               <label for="login-password">Master password <span>YOUR KEY TO EVERYTHING</span></label>
               <div class="input-shell"><span class="input-icon"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3m-4 5v2"/></svg></span><input id="login-password" type="password" autocomplete="current-password" placeholder="Enter your master password" required><button type="button" class="reveal-button" data-toggle="login-password">SHOW</button></div>
               <p class="form-message" id="login-message" role="status"></p>
@@ -60,6 +62,8 @@
             <p class="eyebrow">START WITH PRIVACY</p><h2>Make it<br><span>yours.</span></h2>
             <p class="auth-description">Set a master password. Your private vault starts here.</p>
             <form id="register-form" novalidate>
+              <label for="register-username">Choose a username <span>3–24 LETTERS, NUMBERS OR _</span></label>
+              <div class="input-shell"><span class="input-icon">＠</span><input id="register-username" type="text" minlength="3" maxlength="24" autocomplete="username" placeholder="e.g. divyam_01" required></div>
               <label for="register-locker-name">Name your locker <span>PERSONALIZE YOUR VAULT</span></label>
               <div class="input-shell"><span class="input-icon">✧</span><input id="register-locker-name" type="text" maxlength="40" autocomplete="off" placeholder="e.g. Divyam’s Vault" required></div>
               <label for="register-password">Create master password <span>8–72 CHARACTERS</span></label>

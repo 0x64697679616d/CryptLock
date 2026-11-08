@@ -51,21 +51,24 @@ $$('[data-view]').forEach(button => button.addEventListener('click', () => {
 }));
 
 $('#login-form').addEventListener('submit', async e => {
-  e.preventDefault(); const form = e.currentTarget, password = $('#login-password').value;
-  message('#login-message', ''); if (!password) return message('#login-message', 'Enter your master password.');
+  e.preventDefault(); const form = e.currentTarget, username = $('#login-username').value.trim().toLowerCase(), password = $('#login-password').value;
+  message('#login-message', '');
+  if (!/^[a-z0-9_]{3,24}$/.test(username)) return message('#login-message', 'Enter a valid username (3–24 letters, numbers or underscores).');
+  if (!password) return message('#login-message', 'Enter your master password.');
   setFormBusy(form, true, 'Unlocking vault...');
-  try { await api('/api/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password }) }); form.reset(); await showApp(); }
+  try { await api('/api/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username, password }) }); form.reset(); await showApp(); }
   catch (err) { message('#login-message', err.message); }
   finally { setFormBusy(form, false); }
 });
 $('#register-form').addEventListener('submit', async e => {
-  e.preventDefault(); const form = e.currentTarget, password = $('#register-password').value, confirm = $('#confirm-password').value, lockerName = $('#register-locker-name').value.trim();
+  e.preventDefault(); const form = e.currentTarget, username = $('#register-username').value.trim().toLowerCase(), password = $('#register-password').value, confirm = $('#confirm-password').value, lockerName = $('#register-locker-name').value.trim();
   message('#register-message', '');
+  if (!/^[a-z0-9_]{3,24}$/.test(username)) return message('#register-message', 'Choose a username of 3–24 characters using letters, numbers or underscores.');
   if (!lockerName || lockerName.length > 40 || /[\\/]/.test(lockerName)) return message('#register-message', 'Choose a locker name of 1 to 40 characters without slashes.');
   if (password.length < 8 || password.length > 72) return message('#register-message', 'Use a password between 8 and 72 characters.');
   if (password !== confirm) return message('#register-message', 'The passwords do not match.');
   setFormBusy(form, true, 'Creating locker...');
-  try { await api('/api/register', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password, lockerName }) }); form.reset(); showAuth('login'); message('#login-message', 'Your locker is ready. Sign in to continue.', true); }
+  try { await api('/api/register', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username, password, lockerName }) }); form.reset(); $('#login-username').value = username; showAuth('login'); message('#login-message', 'Your locker is ready. Sign in to continue.', true); }
   catch (err) { message('#register-message', err.message); }
   finally { setFormBusy(form, false); }
 });
@@ -89,7 +92,18 @@ $$('[data-page]').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.p
 $('#mobile-menu').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
 
 function updateLockerBranding(){const initial=(lockerName.trim()[0]||'C').toUpperCase();$('#profile-locker-name').textContent=lockerName;$('#profile-avatar').textContent=initial;$('#top-avatar').textContent=initial;document.title=`${lockerName} | CryptLock`; }
-function supportsPreview(name=''){return ['.pdf','.png','.jpg','.jpeg','.gif','.webp','.bmp','.txt','.md','.csv','.json','.xml','.log','.c','.h','.cc','.cpp','.cxx','.hpp','.hxx','.py','.js','.ts','.jsx','.tsx','.html','.css','.java','.cs','.sql','.php','.go','.rs','.sh','.bash','.yaml','.yml','.toml','.ini','.conf','.rb','.swift','.kt','.dart','.r','.lua','.env','.mk'].includes(name.toLowerCase().slice(name.lastIndexOf('.')));}
+function supportsPreview(name=''){
+  const ext = name.toLowerCase().slice(name.lastIndexOf('.'));
+  const previewable = [
+    '.pdf','.png','.jpg','.jpeg','.gif','.webp','.bmp',
+    '.mp4','.webm','.ogv','.mov','.mkv','.avi',
+    '.mp3','.wav','.ogg','.oga','.m4a','.aac','.flac',
+    '.txt','.md','.csv','.json','.xml','.log','.c','.h','.cc','.cpp','.cxx','.hpp','.hxx',
+    '.py','.js','.ts','.jsx','.tsx','.html','.css','.java','.cs','.sql','.php','.go','.rs',
+    '.sh','.bash','.yaml','.yml','.toml','.ini','.conf','.rb','.swift','.kt','.dart','.r','.lua','.env','.mk'
+  ];
+  return previewable.includes(ext);
+}
 function actionButton(label, symbol, fn, danger=false) { const b=safeText('button',`icon-btn${danger?' danger':''}`,symbol); b.type='button'; b.title=label; b.setAttribute('aria-label',label); b.addEventListener('click',fn); return b; }
 function makeFileRow(file, mode='normal') {
   const row=document.createElement('div'); row.className='file-row';
@@ -149,26 +163,97 @@ async function trashFile(id){if(!confirm('Move this file to Trash?'))return;try{
 async function restoreFile(id){try{await api(`/api/files/${id}/restore`,{method:'POST'});await refreshData();toast('File restored.');}catch(err){toast(err.message);}}
 async function permanentDelete(id){if(!confirm('Permanently delete this encrypted file? This cannot be undone.'))return;try{await api(`/api/files/${id}/permanent`,{method:'DELETE'});await refreshData();toast('File permanently deleted.');}catch(err){toast(err.message);}}
 async function previewFile(id,name){
-  const tab=window.open('about:blank','_blank');
-  if(!tab){toast('Allow pop-ups to open file previews.');return;}
-  const ext=name.toLowerCase().slice(name.lastIndexOf('.'));
-  const textExtensions=['.txt','.md','.csv','.json','.xml','.log','.c','.h','.cc','.cpp','.cxx','.hpp','.hxx','.py','.js','.ts','.jsx','.tsx','.html','.css','.java','.cs','.sql','.php','.go','.rs','.sh','.bash','.yaml','.yml','.toml','.ini','.conf','.rb','.swift','.kt','.dart','.r','.lua','.env','.mk'];
-  tab.document.title=`Preview · ${name}`;
-  tab.document.body.textContent='Decrypting secure preview…';
-  try{
-    const response=await fetch(`/api/files/${encodeURIComponent(id)}/preview`,{credentials:'same-origin'});
-    if(!response.ok){const d=await response.json().catch(()=>({}));throw new Error(d.error||'Preview failed.');}
-    if(textExtensions.includes(ext)){
-      const source=await response.text();
-      const doc=tab.document; doc.documentElement.style.cssText='background:#0b0d16;color:#e7e9f5;';
-      doc.body.replaceChildren(); doc.body.style.cssText='margin:0;background:#0b0d16;color:#e7e9f5;font:14px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;';
-      const header=doc.createElement('header'); header.textContent=`${name}  ·  Decrypted preview`; header.style.cssText='position:sticky;top:0;padding:16px 24px;background:#151827;border-bottom:1px solid #30334a;color:#c8b4ff;font:600 13px system-ui;';
-      const pre=doc.createElement('pre'); pre.textContent=source; pre.style.cssText='white-space:pre;overflow:auto;margin:0;padding:24px;tab-size:4;';
-      doc.body.append(header,pre);
-    }else{
-      const blob=await response.blob(),url=URL.createObjectURL(blob);tab.location.href=url;setTimeout(()=>URL.revokeObjectURL(url),60000);
+  const tab = window.open('about:blank', '_blank');
+  if (!tab) { toast('Allow pop-ups to open file previews.'); return; }
+
+  const ext = name.toLowerCase().slice(name.lastIndexOf('.'));
+  const textExtensions = [
+    '.txt','.md','.csv','.json','.xml','.log','.c','.h','.cc','.cpp','.cxx','.hpp','.hxx',
+    '.py','.js','.ts','.jsx','.tsx','.html','.css','.java','.cs','.sql','.php','.go','.rs',
+    '.sh','.bash','.yaml','.yml','.toml','.ini','.conf','.rb','.swift','.kt','.dart','.r','.lua','.env','.mk'
+  ];
+  const videoExtensions = ['.mp4','.webm','.ogv','.mov','.mkv','.avi'];
+  const audioExtensions = ['.mp3','.wav','.ogg','.oga','.m4a','.aac','.flac'];
+
+  const doc = tab.document;
+  doc.title = `Preview · ${name}`;
+  doc.documentElement.style.cssText = 'min-height:100%;background:#0b0d16;color:#e7e9f5;';
+  doc.body.style.cssText = 'margin:0;min-height:100vh;background:#0b0d16;color:#e7e9f5;font:14px/1.5 system-ui, sans-serif;';
+  const header = doc.createElement('header');
+  header.textContent = `${name} · Decrypted preview`;
+  header.style.cssText = 'position:sticky;top:0;z-index:2;padding:15px 22px;background:#151827;border-bottom:1px solid #30334a;color:#c8b4ff;font-weight:600;';
+  const main = doc.createElement('main');
+  main.style.cssText = 'box-sizing:border-box;min-height:calc(100vh - 54px);padding:20px;display:flex;align-items:center;justify-content:center;';
+  const status = doc.createElement('p');
+  status.textContent = 'Decrypting secure preview…';
+  main.append(status);
+  doc.body.replaceChildren(header, main);
+
+  let objectUrl = null;
+  const releaseUrl = () => {
+    if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+  };
+  tab.addEventListener('pagehide', releaseUrl, { once: true });
+
+  try {
+    const response = await fetch(`/api/files/${encodeURIComponent(id)}/preview`, { credentials:'same-origin' });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || 'Preview failed.');
     }
-  }catch(err){tab.close();toast(err.message);}
+
+    main.replaceChildren();
+    if (textExtensions.includes(ext)) {
+      const source = await response.text();
+      const pre = doc.createElement('pre');
+      pre.textContent = source;
+      pre.style.cssText = 'box-sizing:border-box;width:100%;max-width:1200px;max-height:calc(100vh - 110px);overflow:auto;margin:0;padding:24px;background:#111522;border:1px solid #30334a;border-radius:12px;white-space:pre;tab-size:4;font:13px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;';
+      main.append(pre);
+      return;
+    }
+
+    const blob = await response.blob();
+    objectUrl = URL.createObjectURL(blob);
+
+    if (videoExtensions.includes(ext)) {
+      const video = doc.createElement('video');
+      video.controls = true;
+      video.playsInline = true;
+      video.preload = 'metadata';
+      video.src = objectUrl;
+      video.style.cssText = 'display:block;width:100%;max-width:1200px;max-height:calc(100vh - 110px);background:#000;border-radius:12px;';
+      const note = doc.createElement('p');
+      note.textContent = 'If this video format or codec is unsupported by your browser, download the file and try MP4 (H.264/AAC) or WebM.';
+      note.style.cssText = 'position:fixed;bottom:8px;left:20px;right:20px;text-align:center;color:#aab0c5;font:12px system-ui;';
+      main.append(video);
+      doc.body.append(note);
+    } else if (audioExtensions.includes(ext)) {
+      const audio = doc.createElement('audio');
+      audio.controls = true;
+      audio.preload = 'metadata';
+      audio.src = objectUrl;
+      audio.style.cssText = 'width:min(720px,100%);';
+      main.append(audio);
+    } else if (['.png','.jpg','.jpeg','.gif','.webp','.bmp'].includes(ext)) {
+      const image = doc.createElement('img');
+      image.src = objectUrl;
+      image.alt = name;
+      image.style.cssText = 'display:block;max-width:100%;max-height:calc(100vh - 110px);object-fit:contain;border-radius:10px;';
+      main.append(image);
+    } else if (ext === '.pdf') {
+      const frame = doc.createElement('iframe');
+      frame.src = objectUrl;
+      frame.title = name;
+      frame.style.cssText = 'width:100%;height:calc(100vh - 100px);border:0;background:#fff;';
+      main.style.cssText = 'display:block;padding:0;min-height:0;';
+      main.append(frame);
+    } else {
+      throw new Error('This format does not have a built-in browser preview yet. Download it instead.');
+    }
+  } catch (error) {
+    tab.close();
+    toast(error.message);
+  }
 }
 async function downloadFile(id,name){try{const response=await fetch(`/api/files/${encodeURIComponent(id)}/download`,{credentials:'same-origin'});if(!response.ok){const d=await response.json().catch(()=>({}));throw new Error(d.error||'Download failed.');}const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Decrypted download ready.');}catch(err){toast(err.message);}}
 

@@ -8,6 +8,7 @@ const bcrypt = require('bcrypt');
 const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
+const { ObjectId } = require('mongodb');
 const { connectDatabase, getDatabase, closeDatabase } = require('./database');
 
 require('dotenv').config({ path: path.join(__dirname, '.env') });
@@ -20,7 +21,6 @@ const FILES_DIR = path.join(ROOT, 'data', 'files');
 const UPLOADS_DIR = path.join(ROOT, 'uploads');
 const TEMP_DIR = path.join(ROOT, 'temp');
 const LOCKER_BIN = path.join(ROOT, 'backend', 'locker');
-const MASTER_ID = 'master-locker';
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const activeKeys = new Map();
 
@@ -57,6 +57,7 @@ function requireUnlocked(req, res, next) {
     return res.status(401).json({ ok: false, error: 'Please unlock your locker again.' });
   }
   req.encryptionKey = key;
+  req.userId = req.session.userId;
   next();
 }
 
@@ -75,25 +76,33 @@ function runLocker(action, inputPath, outputPath, key) {
 app.get('/api/health', (_req, res) => res.json({ ok: true, message: 'CryptLock server is running' }));
 
 app.get('/api/auth/status', (req, res) => {
-  res.json({ ok: true, authenticated: Boolean(req.session.authenticated && activeKeys.has(req.sessionID)) });
+  res.json({ ok: true, authenticated: Boolean(req.session.authenticated && req.session.userId && activeKeys.has(req.sessionID)) });
 });
 
 app.post('/api/register', async (req, res) => {
   try {
+    const username = typeof req.body?.username === 'string' ? req.body.username.trim().toLowerCase() : '';
     const { password } = req.body || {};
     const lockerName = typeof req.body?.lockerName === 'string' ? req.body.lockerName.trim() : 'My locker';
-    if (!lockerName || lockerName.length > 40 || /[\\/\0]/.test(lockerName)) return res.status(400).json({ ok: false, error: 'Locker name must be 1 to 40 characters and cannot contain slashes.' });
+
+    if (!/^[a-z0-9_]{3,24}$/.test(username)) {
+      return res.status(400).json({ ok: false, error: 'Username must be 3–24 characters using letters, numbers or underscores.' });
+    }
+    if (!lockerName || lockerName.length > 40 || /[\\/\\0]/.test(lockerName)) {
+      return res.status(400).json({ ok: false, error: 'Locker name must be 1 to 40 characters and cannot contain slashes.' });
+    }
     if (typeof password !== 'string' || password.length < 8 || password.length > 72) {
       return res.status(400).json({ ok: false, error: 'Master password must contain 8 to 72 characters.' });
     }
-    const users = getDatabase().collection('locker_account');
-    if (await users.findOne({ _id: MASTER_ID })) {
-      return res.status(409).json({ ok: false, error: 'A master locker already exists. Please log in.' });
-    }
+
+    const users = getDatabase().collection('users');
     const salt = crypto.randomBytes(16);
     const passwordHash = await bcrypt.hash(password, 12);
+    const userId = new ObjectId().toString();
+
     await users.insertOne({
-      _id: MASTER_ID,
+      _id: userId,
+      username,
       passwordHash,
       kdfSalt: salt.toString('hex'),
       kdf: 'scrypt-N32768-r8-p1',
@@ -102,6 +111,7 @@ app.post('/api/register', async (req, res) => {
     });
     return res.status(201).json({ ok: true });
   } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ ok: false, error: 'That username is already taken.' });
     console.error('Registration failed:', error.message);
     return res.status(500).json({ ok: false, error: 'Could not create the locker.' });
   }
@@ -109,20 +119,31 @@ app.post('/api/register', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
   try {
+    const username = typeof req.body?.username === 'string' ? req.body.username.trim().toLowerCase() : '';
     const { password } = req.body || {};
-    if (typeof password !== 'string' || !password || password.length > 72) {
-      return res.status(400).json({ ok: false, error: 'Enter your master password.' });
+    if (!/^[a-z0-9_]{3,24}$/.test(username) || typeof password !== 'string' || !password || password.length > 72) {
+      return res.status(400).json({ ok: false, error: 'Enter your username and master password.' });
     }
-    const account = await getDatabase().collection('locker_account').findOne({ _id: MASTER_ID });
+
+    const account = await getDatabase().collection('users').findOne({ username });
     if (!account || !(await bcrypt.compare(password, account.passwordHash))) {
-      return res.status(401).json({ ok: false, error: 'Incorrect master password.' });
+      return res.status(401).json({ ok: false, error: 'Incorrect username or master password.' });
     }
+
     const key = deriveKey(password, Buffer.from(account.kdfSalt, 'hex'));
     req.session.regenerate(error => {
-      if (error) return res.status(500).json({ ok: false, error: 'Could not create a secure session.' });
+      if (error) {
+        key.fill(0);
+        return res.status(500).json({ ok: false, error: 'Could not create a secure session.' });
+      }
       req.session.authenticated = true;
+      req.session.userId = String(account._id);
+      req.session.username = account.username;
       req.session.save(saveError => {
-        if (saveError) return res.status(500).json({ ok: false, error: 'Could not save your session.' });
+        if (saveError) {
+          key.fill(0);
+          return res.status(500).json({ ok: false, error: 'Could not save your session.' });
+        }
         activeKeys.set(req.sessionID, key);
         return res.json({ ok: true });
       });
@@ -147,9 +168,9 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
-app.get('/api/locker', requireUnlocked, async (_req, res) => {
+app.get('/api/locker', requireUnlocked, async (req, res) => {
   try {
-    const account = await getDatabase().collection('locker_account').findOne({ _id: MASTER_ID }, { projection: { lockerName: 1 } });
+    const account = await getDatabase().collection('users').findOne({ _id: req.userId }, { projection: { lockerName: 1 } });
     return res.json({ ok: true, lockerName: account?.lockerName || 'My locker' });
   } catch (error) {
     console.error('Read locker profile failed:', error.message);
@@ -163,7 +184,7 @@ app.patch('/api/locker', requireUnlocked, async (req, res) => {
     if (!lockerName || lockerName.length > 40 || /[\\/\0]/.test(lockerName)) {
       return res.status(400).json({ ok: false, error: 'Locker name must be 1 to 40 characters and cannot contain slashes.' });
     }
-    await getDatabase().collection('locker_account').updateOne({ _id: MASTER_ID }, { $set: { lockerName } });
+    await getDatabase().collection('users').updateOne({ _id: req.userId }, { $set: { lockerName } });
     return res.json({ ok: true, lockerName });
   } catch (error) {
     console.error('Update locker profile failed:', error.message);
@@ -171,11 +192,11 @@ app.patch('/api/locker', requireUnlocked, async (req, res) => {
   }
 });
 
-app.get('/api/folders', requireUnlocked, async (_req, res) => {
+app.get('/api/folders', requireUnlocked, async (req, res) => {
   try {
-    const folderDocs = await getDatabase().collection('folders').find({ owner: MASTER_ID }).sort({ name: 1 }).toArray();
+    const folderDocs = await getDatabase().collection('folders').find({ owner: req.userId }).sort({ name: 1 }).toArray();
     const counts = await getDatabase().collection('files').aggregate([
-      { $match: { owner: MASTER_ID, trashedAt: { $exists: false }, folderId: { $ne: null } } },
+      { $match: { owner: req.userId, trashedAt: { $exists: false }, folderId: { $ne: null } } },
       { $group: { _id: '$folderId', count: { $sum: 1 } } }
     ]).toArray();
     const countMap = new Map(counts.map(x => [x._id, x.count]));
@@ -191,8 +212,8 @@ app.post('/api/folders', requireUnlocked, async (req, res) => {
     const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
     if (!name || name.length > 80 || /[\\/\0]/.test(name)) return res.status(400).json({ ok: false, error: 'Folder name must be 1 to 80 characters and cannot contain slashes.' });
     const folders = getDatabase().collection('folders');
-    if (await folders.findOne({ owner: MASTER_ID, name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } })) return res.status(409).json({ ok: false, error: 'A folder with that name already exists.' });
-    const doc = { owner: MASTER_ID, name, createdAt: new Date() };
+    if (await folders.findOne({ owner: req.userId, name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } })) return res.status(409).json({ ok: false, error: 'A folder with that name already exists.' });
+    const doc = { owner: req.userId, name, createdAt: new Date() };
     const result = await folders.insertOne(doc);
     return res.status(201).json({ ok: true, folder: { id: result.insertedId.toString(), name, createdAt: doc.createdAt } });
   } catch (error) {
@@ -206,11 +227,11 @@ app.delete('/api/folders/:id', requireUnlocked, async (req, res) => {
     if (!/^[a-f0-9]{24}$/i.test(req.params.id)) return res.status(400).json({ ok: false, error: 'Invalid folder ID.' });
     const { ObjectId } = require('mongodb');
     const id = new ObjectId(req.params.id), folders = getDatabase().collection('folders');
-    const folder = await folders.findOne({ _id: id, owner: MASTER_ID });
+    const folder = await folders.findOne({ _id: id, owner: req.userId });
     if (!folder) return res.status(404).json({ ok: false, error: 'Folder not found.' });
-    const hasFiles = await getDatabase().collection('files').findOne({ owner: MASTER_ID, folderId: id.toString(), trashedAt: { $exists: false } });
+    const hasFiles = await getDatabase().collection('files').findOne({ owner: req.userId, folderId: id.toString(), trashedAt: { $exists: false } });
     if (hasFiles) return res.status(409).json({ ok: false, error: 'Move the files out of this folder before deleting it.' });
-    await folders.deleteOne({ _id: id, owner: MASTER_ID });
+    await folders.deleteOne({ _id: id, owner: req.userId });
     return res.json({ ok: true });
   } catch (error) {
     console.error('Delete folder failed:', error.message);
@@ -218,12 +239,12 @@ app.delete('/api/folders/:id', requireUnlocked, async (req, res) => {
   }
 });
 
-app.get('/api/files', requireUnlocked, async (_req, res) => {
+app.get('/api/files', requireUnlocked, async (req, res) => {
   try {
     const docs = await getDatabase().collection('files')
-      .find({ owner: MASTER_ID }, { projection: { storedName: 0 } })
+      .find({ owner: req.userId }, { projection: { storedName: 0 } })
       .sort({ createdAt: -1 }).toArray();
-    const folderDocs = await getDatabase().collection('folders').find({ owner: MASTER_ID }).toArray();
+    const folderDocs = await getDatabase().collection('folders').find({ owner: req.userId }).toArray();
     const folderMap = new Map(folderDocs.map(f => [f._id.toString(), f.name]));
     const files = docs.map(f => ({ id: f._id.toString(), name: f.originalName, size: f.size, createdAt: f.createdAt, folderId: f.folderId || null, folderName: f.folderId ? (folderMap.get(f.folderId) || 'Unknown folder') : 'All files', trashedAt: f.trashedAt || null }));
     return res.json({ ok: true, files });
@@ -242,11 +263,11 @@ app.post('/api/files', requireUnlocked, upload.single('file'), async (req, res) 
     let folderId = null;
     if (req.body?.folderId) {
       const { ObjectId } = require('mongodb');
-      if (!/^[a-f0-9]{24}$/i.test(req.body.folderId) || !(await getDatabase().collection('folders').findOne({ _id: new ObjectId(req.body.folderId), owner: MASTER_ID }))) throw new Error('Selected folder does not exist.');
+      if (!/^[a-f0-9]{24}$/i.test(req.body.folderId) || !(await getDatabase().collection('folders').findOne({ _id: new ObjectId(req.body.folderId), owner: req.userId }))) throw new Error('Selected folder does not exist.');
       folderId = req.body.folderId;
     }
     const doc = {
-      owner: MASTER_ID,
+      owner: req.userId,
       originalName: path.basename(req.file.originalname).slice(0, 255),
       storedName,
       size: req.file.size,
@@ -265,8 +286,14 @@ app.post('/api/files', requireUnlocked, upload.single('file'), async (req, res) 
 });
 
 const PREVIEW_TYPES = {
-  '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.pdf': 'application/pdf',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp',
+  // Browser-native media formats. Codec support still depends on the browser.
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.ogv': 'video/ogg',
+  '.mov': 'video/quicktime', '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+  '.oga': 'audio/ogg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac',
   '.txt': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8', '.csv': 'text/plain; charset=utf-8',
   '.json': 'text/plain; charset=utf-8', '.xml': 'text/plain; charset=utf-8', '.log': 'text/plain; charset=utf-8',
   '.c': 'text/plain; charset=utf-8', '.h': 'text/plain; charset=utf-8', '.cc': 'text/plain; charset=utf-8', '.cpp': 'text/plain; charset=utf-8', '.cxx': 'text/plain; charset=utf-8', '.hpp': 'text/plain; charset=utf-8', '.hxx': 'text/plain; charset=utf-8',
@@ -281,12 +308,13 @@ app.get('/api/files/:id/preview', requireUnlocked, async (req, res) => {
   try {
     if (!/^[a-f0-9]{24}$/i.test(req.params.id)) return res.status(400).json({ ok: false, error: 'Invalid file ID.' });
     const { ObjectId } = require('mongodb');
-    const doc = await getDatabase().collection('files').findOne({ _id: new ObjectId(req.params.id), owner: MASTER_ID, trashedAt: { $exists: false } });
+    const doc = await getDatabase().collection('files').findOne({ _id: new ObjectId(req.params.id), owner: req.userId, trashedAt: { $exists: false } });
     if (!doc) return res.status(404).json({ ok: false, error: 'File not found.' });
     const ext = path.extname(doc.originalName).toLowerCase();
     const contentType = PREVIEW_TYPES[ext];
     if (!contentType) return res.status(415).json({ ok: false, error: 'Preview is not available for this file type. Download it instead.' });
-    if (doc.size > 20 * 1024 * 1024) return res.status(413).json({ ok: false, error: 'Preview is limited to files up to 20 MB. Download this file instead.' });
+    // Preview decrypts the complete file before sending it; keep this bounded by the upload limit.
+    if (doc.size > MAX_FILE_SIZE) return res.status(413).json({ ok: false, error: 'Preview is limited to files up to 50 MB. Download this file instead.' });
     plainPath = path.join(TEMP_DIR, `${crypto.randomUUID()}.preview`);
     await runLocker('decrypt', path.join(FILES_DIR, doc.storedName), plainPath, req.encryptionKey);
     res.status(200);
@@ -332,7 +360,7 @@ app.get('/api/files/:id/download', requireUnlocked, async (req, res) => {
   try {
     if (!/^[a-f0-9]{24}$/i.test(req.params.id)) return res.status(400).json({ ok: false, error: 'Invalid file ID.' });
     const { ObjectId } = require('mongodb');
-    const doc = await getDatabase().collection('files').findOne({ _id: new ObjectId(req.params.id), owner: MASTER_ID, trashedAt: { $exists: false } });
+    const doc = await getDatabase().collection('files').findOne({ _id: new ObjectId(req.params.id), owner: req.userId, trashedAt: { $exists: false } });
     if (!doc) return res.status(404).json({ ok: false, error: 'File not found.' });
     plainPath = path.join(TEMP_DIR, `${crypto.randomUUID()}.download`);
     await runLocker('decrypt', path.join(FILES_DIR, doc.storedName), plainPath, req.encryptionKey);
@@ -352,8 +380,8 @@ app.patch('/api/files/:id/folder', requireUnlocked, async (req, res) => {
     if (!/^[a-f0-9]{24}$/i.test(req.params.id)) return res.status(400).json({ ok: false, error: 'Invalid file ID.' });
     const folderId = req.body?.folderId || null;
     const { ObjectId } = require('mongodb');
-    if (folderId && (!/^[a-f0-9]{24}$/i.test(folderId) || !(await getDatabase().collection('folders').findOne({ _id: new ObjectId(folderId), owner: MASTER_ID })))) return res.status(404).json({ ok: false, error: 'Destination folder not found.' });
-    const result = await getDatabase().collection('files').updateOne({ _id: new ObjectId(req.params.id), owner: MASTER_ID, trashedAt: { $exists: false } }, { $set: { folderId } });
+    if (folderId && (!/^[a-f0-9]{24}$/i.test(folderId) || !(await getDatabase().collection('folders').findOne({ _id: new ObjectId(folderId), owner: req.userId })))) return res.status(404).json({ ok: false, error: 'Destination folder not found.' });
+    const result = await getDatabase().collection('files').updateOne({ _id: new ObjectId(req.params.id), owner: req.userId, trashedAt: { $exists: false } }, { $set: { folderId } });
     if (!result.matchedCount) return res.status(404).json({ ok: false, error: 'File not found.' });
     return res.json({ ok: true });
   } catch (error) {
@@ -368,7 +396,7 @@ app.patch('/api/files/:id/rename', requireUnlocked, async (req, res) => {
     const name = typeof req.body?.name === 'string' ? path.basename(req.body.name.trim()).slice(0, 255) : '';
     if (!name || name === '.' || name === '..') return res.status(400).json({ ok: false, error: 'Enter a valid file name.' });
     const { ObjectId } = require('mongodb');
-    const result = await getDatabase().collection('files').updateOne({ _id: new ObjectId(req.params.id), owner: MASTER_ID, trashedAt: { $exists: false } }, { $set: { originalName: name } });
+    const result = await getDatabase().collection('files').updateOne({ _id: new ObjectId(req.params.id), owner: req.userId, trashedAt: { $exists: false } }, { $set: { originalName: name } });
     if (!result.matchedCount) return res.status(404).json({ ok: false, error: 'File not found.' });
     return res.json({ ok: true });
   } catch (error) {
@@ -381,7 +409,7 @@ app.delete('/api/files/:id', requireUnlocked, async (req, res) => {
   try {
     if (!/^[a-f0-9]{24}$/i.test(req.params.id)) return res.status(400).json({ ok: false, error: 'Invalid file ID.' });
     const { ObjectId } = require('mongodb');
-    const result = await getDatabase().collection('files').updateOne({ _id: new ObjectId(req.params.id), owner: MASTER_ID, trashedAt: { $exists: false } }, { $set: { trashedAt: new Date(), folderId: null } });
+    const result = await getDatabase().collection('files').updateOne({ _id: new ObjectId(req.params.id), owner: req.userId, trashedAt: { $exists: false } }, { $set: { trashedAt: new Date(), folderId: null } });
     if (!result.matchedCount) return res.status(404).json({ ok: false, error: 'File not found.' });
     return res.json({ ok: true });
   } catch (error) {
@@ -394,7 +422,7 @@ app.post('/api/files/:id/restore', requireUnlocked, async (req, res) => {
   try {
     if (!/^[a-f0-9]{24}$/i.test(req.params.id)) return res.status(400).json({ ok: false, error: 'Invalid file ID.' });
     const { ObjectId } = require('mongodb');
-    const result = await getDatabase().collection('files').updateOne({ _id: new ObjectId(req.params.id), owner: MASTER_ID, trashedAt: { $exists: true } }, { $unset: { trashedAt: '' } });
+    const result = await getDatabase().collection('files').updateOne({ _id: new ObjectId(req.params.id), owner: req.userId, trashedAt: { $exists: true } }, { $unset: { trashedAt: '' } });
     if (!result.matchedCount) return res.status(404).json({ ok: false, error: 'Trashed file not found.' });
     return res.json({ ok: true });
   } catch (error) {
@@ -408,9 +436,9 @@ app.delete('/api/files/:id/permanent', requireUnlocked, async (req, res) => {
     if (!/^[a-f0-9]{24}$/i.test(req.params.id)) return res.status(400).json({ ok: false, error: 'Invalid file ID.' });
     const { ObjectId } = require('mongodb');
     const files = getDatabase().collection('files');
-    const doc = await files.findOne({ _id: new ObjectId(req.params.id), owner: MASTER_ID, trashedAt: { $exists: true } });
+    const doc = await files.findOne({ _id: new ObjectId(req.params.id), owner: req.userId, trashedAt: { $exists: true } });
     if (!doc) return res.status(404).json({ ok: false, error: 'Trashed file not found.' });
-    await files.deleteOne({ _id: doc._id, owner: MASTER_ID });
+    await files.deleteOne({ _id: doc._id, owner: req.userId });
     fs.rmSync(path.join(FILES_DIR, doc.storedName), { force: true });
     return res.json({ ok: true });
   } catch (error) {
@@ -432,6 +460,7 @@ app.use((error, _req, res, _next) => {
 
 async function startServer() {
   await connectDatabase();
+  await getDatabase().collection('users').createIndex({ username: 1 }, { unique: true, name: 'unique_username' });
   await getDatabase().collection('files').createIndex({ owner: 1, createdAt: -1 });
   await getDatabase().collection('folders').createIndex({ owner: 1, name: 1 }, { unique: true });
   const server = app.listen(PORT, () => console.log(`CryptLock running at http://localhost:${PORT}`));
