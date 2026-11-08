@@ -1,4 +1,4 @@
-﻿{
+{
     "name":  "cryptlock",
     "version":  "1.0.0",
     "description":  "A college semester project that allows authenticated users to store, list, download, decrypt, and delete files through a web interface.",
