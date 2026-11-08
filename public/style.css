@@ -87,12 +87,15 @@ button,input{font-family:inherit}
   margin:0 auto;
   display:grid;
   grid-template-columns:minmax(0,1.12fr) minmax(390px,.88fr);
-  align-items:center;
+  align-items:stretch;
   gap:clamp(34px,5vw,90px);
 }
 .auth-story{
   min-width:0;
-  min-height:620px;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-start;
   overflow:hidden;
   isolation:isolate;
 }
@@ -114,6 +117,10 @@ button,input{font-family:inherit}
   width:100%;
   min-width:0;
   z-index:3;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-start;
 }
 .auth-card{width:min(100%,480px);margin:0 auto}
 .auth-legal{width:min(100%,480px);margin-left:auto;margin-right:auto}
