@@ -23,7 +23,9 @@ const UPLOADS_DIR = path.join(ROOT, 'uploads');
 const TEMP_DIR = path.join(ROOT, 'temp');
 const LOCKER_BIN = path.join(ROOT, 'backend', 'locker');
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
+
 const activeKeys = new Map();
+const activeOwners = new Map();
 
 for (const dir of [UPLOADS_DIR, TEMP_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
@@ -54,6 +56,8 @@ const upload = multer({
   limits: { fileSize: MAX_FILE_SIZE, files: 1 }
 });
 
+/* -------------------- KEY MANAGEMENT -------------------- */
+
 function deriveKey(password, salt) {
   return crypto.scryptSync(password, salt, 32, {
     N: 1 << 15,
@@ -62,6 +66,63 @@ function deriveKey(password, salt) {
     maxmem: 64 * 1024 * 1024
   });
 }
+
+// AES-256-GCM envelope for protecting the existing vault key.
+function sealKey(keyToProtect, wrappingKey) {
+  const iv = crypto.randomBytes(12);
+
+  const cipher = crypto.createCipheriv(
+    'aes-256-gcm',
+    wrappingKey,
+    iv
+  );
+
+  const ciphertext = Buffer.concat([
+    cipher.update(keyToProtect),
+    cipher.final()
+  ]);
+
+  return {
+    version: 1,
+    iv: iv.toString('hex'),
+    tag: cipher.getAuthTag().toString('hex'),
+    ciphertext: ciphertext.toString('hex')
+  };
+}
+
+function openKey(envelope, wrappingKey) {
+  if (!envelope || envelope.version !== 1) {
+    throw new Error('Recovery data is invalid.');
+  }
+
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    wrappingKey,
+    Buffer.from(envelope.iv, 'hex')
+  );
+
+  decipher.setAuthTag(Buffer.from(envelope.tag, 'hex'));
+
+  return Buffer.concat([
+    decipher.update(Buffer.from(envelope.ciphertext, 'hex')),
+    decipher.final()
+  ]);
+}
+
+function recoveryWrappingKey(recoveryKey) {
+  const raw = Buffer.from(recoveryKey, 'base64url');
+
+  if (raw.length !== 32) {
+    throw new Error('Invalid recovery key.');
+  }
+
+  return crypto.createHash('sha256')
+    .update('CryptLock recovery key v1:')
+    .update(raw)
+    .digest();
+}
+
+/* -------------------- AUTHORIZATION -------------------- */
 
 function requireUnlocked(req, res, next) {
   const key = req.session && activeKeys.get(req.sessionID);
@@ -75,8 +136,11 @@ function requireUnlocked(req, res, next) {
 
   req.encryptionKey = key;
   req.userId = req.session.userId;
+
   next();
 }
+
+/* -------------------- C ENCRYPTION PROGRAM -------------------- */
 
 function runLocker(action, inputPath, outputPath, key) {
   return new Promise((resolve, reject) => {
@@ -107,7 +171,7 @@ function runLocker(action, inputPath, outputPath, key) {
   });
 }
 
-/* -------------------- GRIDFS STORAGE -------------------- */
+/* -------------------- GRIDFS -------------------- */
 
 function getFilesBucket() {
   return new GridFSBucket(getDatabase(), {
@@ -118,7 +182,11 @@ function getFilesBucket() {
 function uploadEncryptedFile(localPath, filename, metadata) {
   return new Promise((resolve, reject) => {
     const bucket = getFilesBucket();
-    const uploadStream = bucket.openUploadStream(filename, { metadata });
+
+    const uploadStream = bucket.openUploadStream(filename, {
+      metadata
+    });
+
     const input = fs.createReadStream(localPath);
 
     input.on('error', reject);
@@ -156,6 +224,7 @@ function downloadEncryptedFile(fileId, localPath) {
     });
 
     output.on('finish', resolve);
+
     input.pipe(output);
   });
 }
@@ -166,7 +235,6 @@ async function removeEncryptedFile(doc) {
     return;
   }
 
-  // Compatibility with older locally stored files.
   if (doc.storedName) {
     fs.rmSync(
       path.join(ROOT, 'data', 'files', path.basename(doc.storedName)),
@@ -202,6 +270,7 @@ async function decryptStoredFile(doc, outputPath, key) {
     }
 
     await runLocker('decrypt', encryptedPath, outputPath, key);
+
   } finally {
     fs.rmSync(encryptedPath, { force: true });
   }
@@ -331,10 +400,45 @@ app.post('/api/login', async (req, res) => {
       });
     }
 
-    const key = deriveKey(
+    const passwordKey = deriveKey(
       password,
       Buffer.from(account.kdfSalt, 'hex')
     );
+
+    let key;
+
+    try {
+      if (account.wrappedVaultKey) {
+        key = openKey(account.wrappedVaultKey, passwordKey);
+      } else {
+        // Legacy account migration:
+        // Preserve the exact key used by existing encrypted files.
+        key = Buffer.from(passwordKey);
+
+        await getDatabase().collection('users').updateOne(
+          {
+            _id: account._id,
+            wrappedVaultKey: { $exists: false }
+          },
+          {
+            $set: {
+              wrappedVaultKey: sealKey(key, passwordKey)
+            }
+          }
+        );
+      }
+
+    } catch (keyError) {
+      passwordKey.fill(0);
+      if (key) key.fill(0);
+
+      return res.status(401).json({
+        ok: false,
+        error: 'Password or vault key verification failed.'
+      });
+    }
+
+    passwordKey.fill(0);
 
     req.session.regenerate(error => {
       if (error) {
@@ -361,6 +465,7 @@ app.post('/api/login', async (req, res) => {
         }
 
         activeKeys.set(req.sessionID, key);
+        activeOwners.set(req.sessionID, String(account._id));
 
         return res.json({ ok: true });
       });
@@ -376,6 +481,190 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+/* -------------------- GENERATE RECOVERY KEY -------------------- */
+
+app.post('/api/recovery/setup', requireUnlocked, async (req, res) => {
+  try {
+    const rawRecoveryKey = crypto.randomBytes(32);
+    const recoveryKey = rawRecoveryKey.toString('base64url');
+
+    const recoveryKeyHash = crypto
+      .createHash('sha256')
+      .update(rawRecoveryKey)
+      .digest('hex');
+
+    const envelope = sealKey(
+      req.encryptionKey,
+      recoveryWrappingKey(recoveryKey)
+    );
+
+    await getDatabase().collection('users').updateOne(
+      { _id: req.userId },
+      {
+        $set: {
+          recoveryEnvelope: envelope,
+          recoveryKeyHash,
+          recoveryCreatedAt: new Date()
+        }
+      }
+    );
+
+    rawRecoveryKey.fill(0);
+
+    return res.json({
+      ok: true,
+      recoveryKey
+    });
+
+  } catch (error) {
+    console.error('Recovery setup failed:', error.message);
+
+    return res.status(500).json({
+      ok: false,
+      error: 'Could not generate a recovery key.'
+    });
+  }
+});
+
+/* -------------------- FORGOT PASSWORD -------------------- */
+
+app.post('/api/password/forgot', async (req, res) => {
+  let vaultKey;
+  let newPasswordKey;
+
+  try {
+    const username = typeof req.body?.username === 'string'
+      ? req.body.username.trim().toLowerCase()
+      : '';
+
+    const recoveryKey = typeof req.body?.recoveryKey === 'string'
+      ? req.body.recoveryKey.trim()
+      : '';
+
+    const newPassword = req.body?.newPassword;
+
+    if (!/^[a-z0-9_]{3,24}$/.test(username)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Enter a valid username.'
+      });
+    }
+
+    if (
+      typeof newPassword !== 'string' ||
+      newPassword.length < 8 ||
+      newPassword.length > 72
+    ) {
+      return res.status(400).json({
+        ok: false,
+        error: 'New password must contain 8 to 72 characters.'
+      });
+    }
+
+    const account = await getDatabase()
+      .collection('users')
+      .findOne({ username });
+
+    if (!account || !account.recoveryEnvelope || !account.recoveryKeyHash) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Recovery is not enabled for this account.'
+      });
+    }
+
+    let rawRecoveryKey;
+
+    try {
+      rawRecoveryKey = Buffer.from(recoveryKey, 'base64url');
+
+      if (rawRecoveryKey.length !== 32) {
+        throw new Error('Invalid recovery key.');
+      }
+
+      const suppliedHash = crypto
+        .createHash('sha256')
+        .update(rawRecoveryKey)
+        .digest();
+
+      const savedHash = Buffer.from(account.recoveryKeyHash, 'hex');
+
+      if (
+        savedHash.length !== suppliedHash.length ||
+        !crypto.timingSafeEqual(savedHash, suppliedHash)
+      ) {
+        throw new Error('Invalid recovery key.');
+      }
+
+      vaultKey = openKey(
+        account.recoveryEnvelope,
+        recoveryWrappingKey(recoveryKey)
+      );
+
+    } finally {
+      if (rawRecoveryKey) rawRecoveryKey.fill(0);
+    }
+
+    const newSalt = crypto.randomBytes(16);
+
+    newPasswordKey = deriveKey(newPassword, newSalt);
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    const wrappedVaultKey = sealKey(
+      vaultKey,
+      newPasswordKey
+    );
+
+    const result = await getDatabase().collection('users').updateOne(
+      {
+        _id: account._id,
+        recoveryKeyHash: account.recoveryKeyHash
+      },
+      {
+        $set: {
+          passwordHash,
+          kdfSalt: newSalt.toString('hex'),
+          wrappedVaultKey,
+          passwordChangedAt: new Date()
+        }
+      }
+    );
+
+    if (!result.matchedCount) {
+      throw new Error('Account changed during recovery. Try again.');
+    }
+
+    // Invalidate active in-memory sessions belonging to this account.
+    for (const [sessionId, ownerId] of activeOwners.entries()) {
+      if (ownerId === String(account._id)) {
+        const activeKey = activeKeys.get(sessionId);
+
+        if (activeKey) activeKey.fill(0);
+
+        activeKeys.delete(sessionId);
+        activeOwners.delete(sessionId);
+      }
+    }
+
+    return res.json({
+      ok: true,
+      message: 'Password reset successfully. Your existing encrypted files are preserved. Log in using your new password.'
+    });
+
+  } catch (error) {
+    console.error('Password recovery failed:', error.message);
+
+    return res.status(401).json({
+      ok: false,
+      error: 'Recovery verification failed. Check your recovery key.'
+    });
+
+  } finally {
+    if (vaultKey) vaultKey.fill(0);
+    if (newPasswordKey) newPasswordKey.fill(0);
+  }
+});
+
 /* -------------------- LOGOUT -------------------- */
 
 app.post('/api/logout', (req, res) => {
@@ -385,6 +674,7 @@ app.post('/api/logout', (req, res) => {
     if (key) key.fill(0);
 
     activeKeys.delete(req.sessionID);
+    activeOwners.delete(req.sessionID);
   }
 
   if (!req.session) {
@@ -449,14 +739,15 @@ app.patch('/api/locker', requireUnlocked, async (req, res) => {
       });
     }
 
-    await getDatabase()
-      .collection('users')
-      .updateOne(
-        { _id: req.userId },
-        { $set: { lockerName } }
-      );
+    await getDatabase().collection('users').updateOne(
+      { _id: req.userId },
+      { $set: { lockerName } }
+    );
 
-    return res.json({ ok: true, lockerName });
+    return res.json({
+      ok: true,
+      lockerName
+    });
 
   } catch (error) {
     console.error('Update locker profile failed:', error.message);
@@ -535,15 +826,11 @@ app.post('/api/folders', requireUnlocked, async (req, res) => {
     }
 
     const folders = getDatabase().collection('folders');
-
     const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     if (await folders.findOne({
       owner: req.userId,
-      name: {
-        $regex: `^${escapedName}$`,
-        $options: 'i'
-      }
+      name: { $regex: `^${escapedName}$`, $options: 'i' }
     })) {
       return res.status(409).json({
         ok: false,
@@ -698,7 +985,6 @@ app.post('/api/files', requireUnlocked, upload.single('file'), async (req, res) 
   let gridFsId;
 
   try {
-    // Encrypt the uploaded file using the existing C program.
     await runLocker(
       'encrypt',
       req.file.path,
@@ -724,7 +1010,6 @@ app.post('/api/files', requireUnlocked, upload.single('file'), async (req, res) 
 
     const originalName = path.basename(req.file.originalname).slice(0, 255);
 
-    // Store encrypted bytes in MongoDB GridFS.
     gridFsId = await uploadEncryptedFile(
       encryptedPath,
       `${crypto.randomUUID()}.clck`,
@@ -735,7 +1020,6 @@ app.post('/api/files', requireUnlocked, upload.single('file'), async (req, res) 
       }
     );
 
-    // Store file metadata and GridFS ID.
     const doc = {
       owner: req.userId,
       originalName,
@@ -785,21 +1069,18 @@ app.post('/api/files', requireUnlocked, upload.single('file'), async (req, res) 
 
 const PREVIEW_TYPES = {
   '.pdf': 'application/pdf',
-
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.gif': 'image/gif',
   '.webp': 'image/webp',
   '.bmp': 'image/bmp',
-
   '.mp4': 'video/mp4',
   '.webm': 'video/webm',
   '.ogv': 'video/ogg',
   '.mov': 'video/quicktime',
   '.mkv': 'video/x-matroska',
   '.avi': 'video/x-msvideo',
-
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
@@ -807,14 +1088,12 @@ const PREVIEW_TYPES = {
   '.m4a': 'audio/mp4',
   '.aac': 'audio/aac',
   '.flac': 'audio/flac',
-
   '.txt': 'text/plain; charset=utf-8',
   '.md': 'text/plain; charset=utf-8',
   '.csv': 'text/plain; charset=utf-8',
   '.json': 'text/plain; charset=utf-8',
   '.xml': 'text/plain; charset=utf-8',
   '.log': 'text/plain; charset=utf-8',
-
   '.c': 'text/plain; charset=utf-8',
   '.h': 'text/plain; charset=utf-8',
   '.cc': 'text/plain; charset=utf-8',
@@ -822,7 +1101,6 @@ const PREVIEW_TYPES = {
   '.cxx': 'text/plain; charset=utf-8',
   '.hpp': 'text/plain; charset=utf-8',
   '.hxx': 'text/plain; charset=utf-8',
-
   '.py': 'text/plain; charset=utf-8',
   '.js': 'text/plain; charset=utf-8',
   '.ts': 'text/plain; charset=utf-8',
@@ -832,7 +1110,6 @@ const PREVIEW_TYPES = {
   '.jsx': 'text/plain; charset=utf-8',
   '.tsx': 'text/plain; charset=utf-8',
   '.cs': 'text/plain; charset=utf-8',
-
   '.sql': 'text/plain; charset=utf-8',
   '.php': 'text/plain; charset=utf-8',
   '.go': 'text/plain; charset=utf-8',
@@ -925,9 +1202,7 @@ app.get('/api/files/:id/preview', requireUnlocked, async (req, res) => {
 
     const cleanupPreview = () => {
       try {
-        if (previewPath) {
-          fs.rmSync(previewPath, { force: true });
-        }
+        fs.rmSync(previewPath, { force: true });
       } catch (cleanupError) {
         console.error('Preview cleanup failed:', cleanupError.message);
       }
@@ -1056,16 +1331,14 @@ app.patch('/api/files/:id/folder', requireUnlocked, async (req, res) => {
       });
     }
 
-    const result = await getDatabase()
-      .collection('files')
-      .updateOne(
-        {
-          _id: new ObjectId(req.params.id),
-          owner: req.userId,
-          trashedAt: { $exists: false }
-        },
-        { $set: { folderId } }
-      );
+    const result = await getDatabase().collection('files').updateOne(
+      {
+        _id: new ObjectId(req.params.id),
+        owner: req.userId,
+        trashedAt: { $exists: false }
+      },
+      { $set: { folderId } }
+    );
 
     if (!result.matchedCount) {
       return res.status(404).json({
@@ -1108,16 +1381,14 @@ app.patch('/api/files/:id/rename', requireUnlocked, async (req, res) => {
       });
     }
 
-    const result = await getDatabase()
-      .collection('files')
-      .updateOne(
-        {
-          _id: new ObjectId(req.params.id),
-          owner: req.userId,
-          trashedAt: { $exists: false }
-        },
-        { $set: { originalName: name } }
-      );
+    const result = await getDatabase().collection('files').updateOne(
+      {
+        _id: new ObjectId(req.params.id),
+        owner: req.userId,
+        trashedAt: { $exists: false }
+      },
+      { $set: { originalName: name } }
+    );
 
     if (!result.matchedCount) {
       return res.status(404).json({
@@ -1149,21 +1420,19 @@ app.delete('/api/files/:id', requireUnlocked, async (req, res) => {
       });
     }
 
-    const result = await getDatabase()
-      .collection('files')
-      .updateOne(
-        {
-          _id: new ObjectId(req.params.id),
-          owner: req.userId,
-          trashedAt: { $exists: false }
-        },
-        {
-          $set: {
-            trashedAt: new Date(),
-            folderId: null
-          }
+    const result = await getDatabase().collection('files').updateOne(
+      {
+        _id: new ObjectId(req.params.id),
+        owner: req.userId,
+        trashedAt: { $exists: false }
+      },
+      {
+        $set: {
+          trashedAt: new Date(),
+          folderId: null
         }
-      );
+      }
+    );
 
     if (!result.matchedCount) {
       return res.status(404).json({
@@ -1195,16 +1464,14 @@ app.post('/api/files/:id/restore', requireUnlocked, async (req, res) => {
       });
     }
 
-    const result = await getDatabase()
-      .collection('files')
-      .updateOne(
-        {
-          _id: new ObjectId(req.params.id),
-          owner: req.userId,
-          trashedAt: { $exists: true }
-        },
-        { $unset: { trashedAt: '' } }
-      );
+    const result = await getDatabase().collection('files').updateOne(
+      {
+        _id: new ObjectId(req.params.id),
+        owner: req.userId,
+        trashedAt: { $exists: true }
+      },
+      { $unset: { trashedAt: '' } }
+    );
 
     if (!result.matchedCount) {
       return res.status(404).json({
@@ -1304,23 +1571,20 @@ app.use((error, _req, res, _next) => {
 async function startServer() {
   await connectDatabase();
 
-  await getDatabase()
-    .collection('users')
-    .createIndex(
-      { username: 1 },
-      { unique: true, name: 'unique_username' }
-    );
+  await getDatabase().collection('users').createIndex(
+    { username: 1 },
+    { unique: true, name: 'unique_username' }
+  );
 
-  await getDatabase()
-    .collection('files')
-    .createIndex({ owner: 1, createdAt: -1 });
+  await getDatabase().collection('files').createIndex({
+    owner: 1,
+    createdAt: -1
+  });
 
-  await getDatabase()
-    .collection('folders')
-    .createIndex(
-      { owner: 1, name: 1 },
-      { unique: true }
-    );
+  await getDatabase().collection('folders').createIndex(
+    { owner: 1, name: 1 },
+    { unique: true }
+  );
 
   const server = app.listen(PORT, () => {
     console.log(`CryptLock running at http://localhost:${PORT}`);
@@ -1333,6 +1597,7 @@ async function startServer() {
       }
 
       activeKeys.clear();
+      activeOwners.clear();
 
       await closeDatabase();
       process.exit(0);
