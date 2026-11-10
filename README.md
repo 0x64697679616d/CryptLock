@@ -599,7 +599,7 @@ Team Members:
 Divyam
 GitHub: @0x64697679616d
 
-Shouvik
+Shouvik lendu gendu
 GitHub: shouvikd48-cmyk
 
 Bablu
